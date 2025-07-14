@@ -1,0 +1,27 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      # 1) Mount your entire project into the container
+      - .:/usr/src/app
+      # 2) Keep container’s node_modules isolated
+      - /usr/src/app/node_modules
+    depends_on:
+      - mongo
+    environment:
+      MONGO_URI: mongodb://mongo:27017/bugsdb
+    command: ["npm", "run", "dev"]  # uses nodemon for live reload
+
+  mongo:
+    image: mongo:6.0
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27018:27017"
+
+volumes:
+  mongo-data:

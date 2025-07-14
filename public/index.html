@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bug Reporter</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="container">
+    <!-- Hero banner -->
+    <header class="hero-banner">
+      <div class="logo-container">
+        <img src="rmit-logo.png" alt="School Logo" class="logo">
+      </div>
+    </header>
+
+    <!-- Page title -->
+    <div class="card header-card">
+      <h1>Software Testing Bug Report</h1>
+    </div>
+
+    <!-- Form -->
+    <form id="bug-form">
+      <!-- Team / Email -->
+      <div class="card">
+        <label for="team-email">Team Name or Email</label>
+        <input type="text" id="team-email" name="teamEmail" required>
+      </div>
+
+      <!-- Bug entries -->
+      <div id="bugs-container">
+        <!-- Always-present entry (no remove button) -->
+        <div class="card bug-entry">
+          <label>URL / API endpoint</label>
+          <input type="text" name="url[]" required>
+          <label>Description</label>
+          <textarea name="description[]" rows="3" required></textarea>
+        </div>
+      </div>
+
+      <!-- Add + Submit -->
+      <div class="buttons">
+        <button type="button" id="add-bug">+ Add another bug</button>
+        <button type="submit">Submit</button>
+        <a href="leaderboard.html" class="button leaderboard-btn">View Leaderboard →</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Template for clones (with its own remove button) -->
+  <template id="bug-template">
+    <div class="card bug-entry">
+      <button type="button" class="remove-bug">×</button>
+      <label>URL / API endpoint</label>
+      <input type="text" name="url[]" required>
+      <label>Description</label>
+      <textarea name="description[]" rows="3" required></textarea>
+    </div>
+  </template>
+
+  <script src="script.js"></script>
+</body>
+</html>
