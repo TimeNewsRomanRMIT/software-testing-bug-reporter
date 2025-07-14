@@ -13,7 +13,7 @@ services:
       - mongo
     environment:
       MONGO_URI: mongodb://mongo:27017/bugsdb
-    command: ["npm", "run", "dev"]  # uses nodemon for live reload
+    # command: ["npm", "run", "dev"]  # uses nodemon for live reload
 
   mongo:
     image: mongo:6.0
