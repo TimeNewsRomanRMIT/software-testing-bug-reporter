@@ -14,7 +14,8 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "mongoose": "^8.16.3"
+    "mongoose": "^8.16.3",
+    "natural": "^8.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

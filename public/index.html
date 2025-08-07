@@ -30,34 +30,25 @@
 
       <!-- Bug entries -->
       <div id="bugs-container">
-        <!-- Always-present entry (no remove button) -->
         <div class="card bug-entry">
           <label>URL / API endpoint</label>
-          <input type="text" name="url[]" required>
-          <label>Description</label>
-          <textarea name="description[]" rows="3" required></textarea>
+          <input type="text" name="url" required>
+          <label>Summary Description</label>
+          <textarea name="description" rows="3" required></textarea>
+          <label>Test Steps</label>
+          <textarea name="testSteps" rows="3" placeholder="e.g. 1) Go to /login  2) Enter bad creds  3) Observe no logout option"></textarea>
         </div>
       </div>
 
       <!-- Add + Submit -->
       <div class="buttons">
-        <button type="button" id="add-bug">+ Add another bug</button>
+        <!-- <button type="button" id="add-bug">+ Add another bug</button> -->
         <button type="submit">Submit</button>
         <a href="leaderboard.html" class="button leaderboard-btn">View Leaderboard →</a>
+        <a href="submissions.html" class="button">View All Submissions →</a>
       </div>
     </form>
   </div>
-
-  <!-- Template for clones (with its own remove button) -->
-  <template id="bug-template">
-    <div class="card bug-entry">
-      <button type="button" class="remove-bug">×</button>
-      <label>URL / API endpoint</label>
-      <input type="text" name="url[]" required>
-      <label>Description</label>
-      <textarea name="description[]" rows="3" required></textarea>
-    </div>
-  </template>
 
   <script src="script.js"></script>
 </body>
