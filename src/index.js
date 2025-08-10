@@ -1,6 +1,7 @@
 const express  = require('express');
 const mongoose = require('mongoose');
 const cors     = require('cors');
+const fs = require('fs');
 const path = require('path');
 const bugsRouter = require('./routes/bugs');
 
@@ -16,6 +17,12 @@ mongoose.connect(mongoUri)
 app.use('/api/bugs', bugsRouter);
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// ensure uploads dir exists
+fs.mkdirSync(path.join(__dirname, '..', 'uploads'), { recursive: true });
+
+// serve uploaded files at /uploads/...
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 app.get('/', (req, res) => {
   res.send('Hello Bug Reporter!');

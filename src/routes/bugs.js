@@ -4,6 +4,87 @@ const router  = express.Router();
 const natural = require('natural');
 const { JaroWinklerDistance } = natural;
 
+const multer = require('multer');
+const path   = require('path');
+const fs     = require('fs');
+
+// storage on disk
+const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext  = path.extname(file.originalname).toLowerCase();
+    const name = Date.now() + '-' + Math.round(Math.random() * 1e9) + ext;
+    cb(null, name);
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  if (/^image\/(png|jpeg|jpg|gif|webp)$/.test(file.mimetype)) cb(null, true);
+  else cb(new Error('Only image files are allowed'));
+};
+
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024, files: 5 } // 5MB each, up to 5 images
+});
+
+// Helper
+function toTitleCase(str) {
+  return (str || '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+// POST /api/bugs — now accepts multipart/form-data with images
+router.post('/', upload.array('images', 5), async (req, res) => {
+  try {
+    // fields from the form (multipart)
+    const incoming = req.body;
+
+    // normalize
+    const bugBase = {
+      team:        toTitleCase(incoming.team || incoming.email || ''),
+      email:       (incoming.email || incoming.team || '').trim().toLowerCase(),
+      url:         (incoming.url || '').trim(),
+      description: (incoming.description || '').trim(),
+      testSteps:   (incoming.testSteps || '').trim(),
+      createdAt:   new Date()
+    };
+
+    // build images metadata from uploaded files
+    const images = (req.files || []).map(f => ({
+      path: `/uploads/${f.filename}`,
+      originalName: f.originalname,
+      size: f.size,
+      type: f.mimetype
+    }));
+
+    // duplicate logic (your threshold)
+    const existing = await Bug.find({ url: bugBase.url });
+    existing.forEach(e => {
+      const s = JaroWinklerDistance(e.description, bugBase.description);
+      console.log(`Similarity("${e.description}","${bugBase.description}")=${s.toFixed(3)}`);
+    });
+    const isDuplicate = existing.some(
+      e => JaroWinklerDistance(e.description, bugBase.description) > 0.45
+    );
+
+    const doc = await Bug.create({ ...bugBase, images, duplicate: isDuplicate });
+    res.status(201).json(doc);
+
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Helper: Title-case a string
 function toTitleCase(str) {
   return str
@@ -17,62 +98,34 @@ function toTitleCase(str) {
 // src/routes/bugs.js (inside router.post)
 router.post('/', async (req, res) => {
   try {
-    const raw = Array.isArray(req.body.bugs) ? req.body.bugs : [req.body];
+    const raw      = Array.isArray(req.body.bugs) ? req.body.bugs : [req.body];
     const inserted = [];
 
-    for (let incoming of raw) {
-      // Normalize
-      const bug = {
+    for (const incoming of raw) {
+      // normalize fields...
+      const bugBase = {
         team:        toTitleCase(incoming.team || incoming.email || ''),
-        email:       (incoming.email || incoming.team || '').trim().toLowerCase(),
+        email:       (incoming.email || incoming.team).trim().toLowerCase(),
         url:         (incoming.url || '').trim(),
         description: (incoming.description || '').trim(),
         testSteps:   (incoming.testSteps || '').trim(),
         createdAt:   new Date()
       };
 
-      // 1) Find existing bugs with the same URL
-      const existing = await Bug.find({ url: bug.url });
-
-      // ── NEW: log each similarity score ──
-      existing.forEach(e => {
-        const score = JaroWinklerDistance(e.description, bug.description);
-        console.log(
-          `Similarity("${e.description}", "${bug.description}") = ${score.toFixed(3)}`
-        );
-      });
-
-      // 2) Filter to only those whose description is "similar"
-      const duplicates = existing.filter(e =>
-        JaroWinklerDistance(e.description, bug.description) > 0.45
+      // detect duplicates on the same URL
+      const existing   = await Bug.find({ url: bugBase.url });
+      const isDuplicate = existing.some(e =>
+        JaroWinklerDistance(e.description, bugBase.description) > 0.45
       );
 
-      if (duplicates.length > 0) {
-        // We’ve found at least one “same error”
-        // 2a) If the same user already reported it → skip
-        const already = duplicates.some(e => e.email === bug.email);
-        if (already) {
-          console.log(`Skipping duplicate for same user ${bug.email}`);
-          continue; 
-        }
-        // 2b) Different user → treat as new report of the same error
-        // fall through to insertion
-      }
-
-      // 3) No duplicates → new error, or different user → new report
-      const doc = await Bug.create(bug);
+      // create with the flag
+      const doc = await Bug.create({ ...bugBase, duplicate: isDuplicate });
       inserted.push(doc);
     }
 
-    if (inserted.length === 0) {
-      return res
-        .status(409)
-        .json({ error: 'No new bugs inserted (all duplicates for same user).' });
-    }
-    res.status(201).json(inserted);
-
+    return res.status(201).json(inserted);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: err.message });
   }
 });
 
@@ -86,28 +139,23 @@ router.get('/', async (req, res) => {
 //  GET /api/leaderboard  → teams ranked by URL-count
 router.get('/leaderboard', async (req, res) => {
   const agg = await Bug.aggregate([
-    // Group by team, collect unique URLs & count all bugs
-    {
-      $group: {
+    { $match: { duplicate: false } },     // ← skip all dups
+    { $group: {
         _id: '$team',
         uniqueUrls: { $addToSet: '$url' },
         bugCount:   { $sum: 1 }
-      }
-    },
-    // Project the fields we want
-    {
-      $project: {
-        _id:       0,
-        team:      '$_id',
-        urlCount:  { $size: '$uniqueUrls' },
-        bugCount:  1
-      }
-    },
-    // Sort by number of unique URLs descending
+    }},
+    { $project: {
+        _id:      0,
+        team:     '$_id',
+        urlCount: { $size: '$uniqueUrls' },
+        bugCount: 1
+    }},
     { $sort: { urlCount: -1, bugCount: -1 } }
   ]);
   res.json(agg);
 });
+
 
 // **below** your existing routes in src/routes/bugs.js
 
@@ -142,24 +190,25 @@ router.get('/matches/:id', async (req, res) => {
 // { url, description, teamCount, teams: [ ... ] }
 router.get('/groups', async (req, res) => {
   try {
-    // 1) fetch every bug, sorted oldest→newest
+    // const all = await Bug.find({ duplicate: false }).sort('createdAt');
     const all = await Bug.find().sort('createdAt');
+
+    console.log('=== group run ===');
+    all.forEach((bug,i) => {
+      console.log(`${i+1}. [${bug.team}] "${bug.description}"`);
+    });
 
     const groups = [];
     all.forEach(bug => {
-      // Look for a group with same URL + similar description
-      let grp = groups.find(g =>
-        g.url === bug.url &&
-        JaroWinklerDistance(g.description, bug.description) > 0.5
-      );
-
+      let grp = groups.find(g => {
+        const score = JaroWinklerDistance(g.description, bug.description);
+        console.log(
+          `  compare "${bug.description}"  vs  "${g.description}" → ${score.toFixed(3)}`
+        );
+        return g.url === bug.url && score > 0.5;    // your current 0.5 cutoff
+      });
       if (!grp) {
-        // start a new group
-        grp = {
-          url:         bug.url,
-          description: bug.description,
-          teams:      new Set()
-        };
+        grp = { url: bug.url, description: bug.description, teams: new Set() };
         groups.push(grp);
       }
       grp.teams.add(bug.team);

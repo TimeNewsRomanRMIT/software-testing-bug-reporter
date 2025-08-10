@@ -99,3 +99,92 @@ a.button {
 .buttons .leaderboard-btn {
   margin-left: auto;
 }
+
+.thumbs { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+.thumbs .thumb { position:relative; width:120px; height:80px; }
+.thumbs img { width:100%; height:100%; object-fit:cover; border-radius:6px; }
+.thumbs button {
+  position:absolute; top:4px; right:4px; border:none; border-radius:50%;
+  width:22px; height:22px; cursor:pointer; background:#0008; color:#fff;
+}
+
+/* Preview grid layout */
+.preview-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(120px, 1fr));
+  gap:10px;
+  margin-top:6px;
+
+  /* if you want to keep it from getting too tall, cap and scroll: */
+  max-height: 260px;
+  overflow:auto;
+  padding-right: 2px; /* nicer scroll look */
+}
+
+/* Each thumbnail is a fixed box; aspect-ratio keeps consistent shape */
+.preview-grid .thumb{
+  position:relative;
+  aspect-ratio: 4 / 3;      /* 4:3 thumb; change to 16/9 if you prefer */
+  border-radius:8px;
+  overflow:hidden;
+  background:#f6f6f6;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);
+}
+
+/* Image fills the box, cropped if needed */
+.preview-grid img{
+  width:100%;
+  height:100%;
+  object-fit:cover;          /* key: prevents overflow */
+  display:block;
+}
+
+/* Remove button */
+.preview-grid .remove{
+  position:absolute;
+  top:6px; right:6px;
+  width:22px; height:22px;
+  border:none; border-radius:50%;
+  background:#0008; color:#fff;
+  cursor:pointer;
+  line-height:22px; font-size:13px;
+}
+
+/* ---- Fix misaligned remove buttons in preview ---- */
+.preview-grid .thumb { position: relative; } /* already there, but safe */
+
+.preview-grid .remove{
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+
+  /* reset browser button look */
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+
+  /* circle + center the "x" */
+  border-radius: 50%;
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* keep glyph centered, no baseline shift */
+  line-height: 1;
+  font-weight: 700;
+  font-size: 14px;
+
+  /* stay above the image */
+  z-index: 1;
+  box-shadow: 0 1px 2px rgba(0,0,0,.25);
+}
+
+/* (optional) nicer hover */
+.preview-grid .remove:hover{
+  background: rgba(0,0,0,.75);
+}

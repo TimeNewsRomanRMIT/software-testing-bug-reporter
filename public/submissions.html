@@ -75,6 +75,18 @@
           <p><strong>Test Steps:</strong> ${bug.testSteps || '(none)'}</p>
           <p><strong>When:</strong> ${new Date(bug.createdAt).toLocaleString()}</p>
         `;
+        if (bug.images && bug.images.length) {
+          card.innerHTML += `
+            <p><strong>Screenshots:</strong></p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              ${bug.images.map(img =>
+                `<a href="${img.path}" target="_blank">
+                  <img src="${img.path}" alt="" style="width:120px; height:80px; object-fit:cover; border-radius:6px;">
+                </a>`
+              ).join('')}
+            </div>
+          `;
+        }
         list.appendChild(card);
       });
     }
