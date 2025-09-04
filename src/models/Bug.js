@@ -19,4 +19,6 @@ const bugSchema = new mongoose.Schema({
   createdAt:   { type: Date, default: Date.now }
 });
 
+bugSchema.index({ team: 1, url: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Bug', bugSchema);

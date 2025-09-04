@@ -42,23 +42,32 @@ function toTitleCase(str) {
     .join(' ');
 }
 
-// POST /api/bugs — now accepts multipart/form-data with images
+// helpers (put near top of file, once)
+function nUrl(s = '') {
+  return s.trim().replace(/\/+$/,''); // trim + drop trailing slash
+}
+function nDesc(s = '') {
+  return s.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 router.post('/', upload.array('images', 5), async (req, res) => {
   try {
-    // fields from the form (multipart)
     const incoming = req.body;
 
-    // normalize
+    const teamName  = toTitleCase(incoming.team || incoming.email || '');
+    const urlRaw    = (incoming.url || '').trim();
+    const descRaw   = (incoming.description || '').trim();
+
     const bugBase = {
-      team:        toTitleCase(incoming.team || incoming.email || ''),
+      team:        teamName,
       email:       (incoming.email || incoming.team || '').trim().toLowerCase(),
-      url:         (incoming.url || '').trim(),
-      description: (incoming.description || '').trim(),
+      url:         nUrl(urlRaw),
+      description: descRaw,
       testSteps:   (incoming.testSteps || '').trim(),
       createdAt:   new Date()
     };
 
-    // build images metadata from uploaded files
+    // images metadata
     const images = (req.files || []).map(f => ({
       path: `/uploads/${f.filename}`,
       originalName: f.originalname,
@@ -66,14 +75,22 @@ router.post('/', upload.array('images', 5), async (req, res) => {
       type: f.mimetype
     }));
 
-    // duplicate logic (your threshold)
-    const existing = await Bug.find({ url: bugBase.url });
-    existing.forEach(e => {
-      const s = JaroWinklerDistance(e.description, bugBase.description);
-      console.log(`Similarity("${e.description}","${bugBase.description}")=${s.toFixed(3)}`);
+    // 🔑 Per-team dedup: same TEAM + same URL
+    const candidates = await Bug.find({
+      team: bugBase.team,
+      url:  bugBase.url
     });
-    const isDuplicate = existing.some(
-      e => JaroWinklerDistance(e.description, bugBase.description) > 0.45
+
+    const newDescN = nDesc(bugBase.description);
+
+    // debug log (optional)
+    candidates.forEach(e => {
+      const score = JaroWinklerDistance(nDesc(e.description), newDescN);
+      console.log(`JW(team=${e.team}) url=${e.url} :: "${e.description}" vs "${bugBase.description}" => ${score.toFixed(3)}`);
+    });
+
+    const isDuplicate = candidates.some(e =>
+      JaroWinklerDistance(nDesc(e.description), newDescN) > 0.5
     );
 
     const doc = await Bug.create({ ...bugBase, images, duplicate: isDuplicate });
@@ -85,49 +102,6 @@ router.post('/', upload.array('images', 5), async (req, res) => {
   }
 });
 
-// Helper: Title-case a string
-function toTitleCase(str) {
-  return str
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
-// src/routes/bugs.js (inside router.post)
-router.post('/', async (req, res) => {
-  try {
-    const raw      = Array.isArray(req.body.bugs) ? req.body.bugs : [req.body];
-    const inserted = [];
-
-    for (const incoming of raw) {
-      // normalize fields...
-      const bugBase = {
-        team:        toTitleCase(incoming.team || incoming.email || ''),
-        email:       (incoming.email || incoming.team).trim().toLowerCase(),
-        url:         (incoming.url || '').trim(),
-        description: (incoming.description || '').trim(),
-        testSteps:   (incoming.testSteps || '').trim(),
-        createdAt:   new Date()
-      };
-
-      // detect duplicates on the same URL
-      const existing   = await Bug.find({ url: bugBase.url });
-      const isDuplicate = existing.some(e =>
-        JaroWinklerDistance(e.description, bugBase.description) > 0.45
-      );
-
-      // create with the flag
-      const doc = await Bug.create({ ...bugBase, duplicate: isDuplicate });
-      inserted.push(doc);
-    }
-
-    return res.status(201).json(inserted);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-});
 
 //  GET /api/bugs?team=XYZ  → list bugs for one team
 router.get('/', async (req, res) => {
@@ -190,36 +164,36 @@ router.get('/matches/:id', async (req, res) => {
 // { url, description, teamCount, teams: [ ... ] }
 router.get('/groups', async (req, res) => {
   try {
-    // const all = await Bug.find({ duplicate: false }).sort('createdAt');
-    const all = await Bug.find().sort('createdAt');
-
-    console.log('=== group run ===');
-    all.forEach((bug,i) => {
-      console.log(`${i+1}. [${bug.team}] "${bug.description}"`);
-    });
+    const all = await Bug.find({ duplicate: false }).sort('createdAt');
 
     const groups = [];
     all.forEach(bug => {
-      let grp = groups.find(g => {
-        const score = JaroWinklerDistance(g.description, bug.description);
-        console.log(
-          `  compare "${bug.description}"  vs  "${g.description}" → ${score.toFixed(3)}`
-        );
-        return g.url === bug.url && score > 0.5;    // your current 0.5 cutoff
-      });
+      const urlN   = nUrl(bug.url);
+      const descN  = nDesc(bug.description);
+
+      let grp = groups.find(g =>
+        g.url === urlN &&
+        JaroWinklerDistance(g.descN, descN) > 0.5
+      );
+
       if (!grp) {
-        grp = { url: bug.url, description: bug.description, teams: new Set() };
+        grp = {
+          url:   urlN,
+          // store a representative original description to show
+          description: bug.description,
+          descN: descN,
+          teams: new Set()
+        };
         groups.push(grp);
       }
       grp.teams.add(bug.team);
     });
 
-    // Format for JSON
     const out = groups.map(g => ({
-      url:         g.url,
+      url: g.url,
       description: g.description,
-      teamCount:   g.teams.size,
-      teams:       Array.from(g.teams)
+      teamCount: g.teams.size,
+      teams: Array.from(g.teams)
     }));
 
     res.json(out);
@@ -227,6 +201,7 @@ router.get('/groups', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 module.exports = router;
