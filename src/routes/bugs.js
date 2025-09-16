@@ -103,12 +103,38 @@ router.post('/', upload.array('images', 5), async (req, res) => {
 });
 
 
-//  GET /api/bugs?team=XYZ  → list bugs for one team
+// GET /api/bugs?team=<partial>&page=1&limit=10     team is optional; if provided we filter with a case-insensitive regex. cap limit at 100 to prevent silly values.
 router.get('/', async (req, res) => {
-  const filter = req.query.team ? { team: req.query.team } : {};
-  const bugs = await Bug.find(filter).sort('-createdAt');
-  res.json(bugs);
+  try {
+    const { team = '', page = 1, limit = 10 } = req.query;
+
+    const pageNum  = Math.max(1, parseInt(page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+
+    const filter = {};
+    if (team && team.trim()) {
+      // case-insensitive partial match on team name
+      filter.team = { $regex: team.trim(), $options: 'i' };
+    }
+
+    const total = await Bug.countDocuments(filter);
+    const items = await Bug.find(filter)
+      .sort('-createdAt')
+      .skip((pageNum - 1) * pageSize)
+      .limit(pageSize);
+
+    res.json({
+      items,
+      total,
+      page: pageNum,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
 
 //  GET /api/leaderboard  → teams ranked by URL-count
 router.get('/leaderboard', async (req, res) => {
@@ -164,13 +190,15 @@ router.get('/matches/:id', async (req, res) => {
 // { url, description, teamCount, teams: [ ... ] }
 router.get('/groups', async (req, res) => {
   try {
+    // Keep your existing filter and chronological order
     const all = await Bug.find({ duplicate: false }).sort('createdAt');
 
     const groups = [];
     all.forEach(bug => {
-      const urlN   = nUrl(bug.url);
-      const descN  = nDesc(bug.description);
+      const urlN  = nUrl(bug.url);
+      const descN = nDesc(bug.description);
 
+      // Same grouping rule: same normalized URL + JW(desc) > 0.5
       let grp = groups.find(g =>
         g.url === urlN &&
         JaroWinklerDistance(g.descN, descN) > 0.5
@@ -178,23 +206,39 @@ router.get('/groups', async (req, res) => {
 
       if (!grp) {
         grp = {
-          url:   urlN,
-          // store a representative original description to show
-          description: bug.description,
-          descN: descN,
-          teams: new Set()
+          url:         urlN,
+          description: bug.description,  // keep representative original text
+          descN:       descN,            // normalized text for grouping
+          teams:       new Set(),
+          perTeamAt:   new Map()         // NEW: team -> first seen Date
         };
         groups.push(grp);
       }
+
+      // Track which teams reported this cluster
       grp.teams.add(bug.team);
+
+      // Because 'all' is sorted by createdAt asc,
+      // the first time we see a team for this group is the first-seen time.
+      if (!grp.perTeamAt.has(bug.team)) {
+        grp.perTeamAt.set(bug.team, bug.createdAt);
+      }
     });
 
-    const out = groups.map(g => ({
-      url: g.url,
-      description: g.description,
-      teamCount: g.teams.size,
-      teams: Array.from(g.teams)
-    }));
+    // Shape for JSON: convert Set/Map to plain objects/arrays
+    const out = groups.map(g => {
+      const perTeamAt = {};
+      for (const [team, at] of g.perTeamAt) {
+        perTeamAt[team] = at instanceof Date ? at.toISOString() : at;
+      }
+      return {
+        url:         g.url,
+        description: g.description,
+        teamCount:   g.teams.size,
+        teams:       Array.from(g.teams),
+        perTeamAt    // NEW
+      };
+    });
 
     res.json(out);
   } catch (err) {

@@ -44,6 +44,9 @@
   <script>
     let groupsData = [];
 
+    // Show only HH:MM in user’s local time
+    const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
     async function loadAll() {
       const res    = await fetch('/api/bugs/groups');
       groupsData   = await res.json();
@@ -61,27 +64,36 @@
         el.textContent = 'No data yet—submit some bugs!';
         return;
       }
-      // Build map: team → [bugIndices]
+
+      // Build: team -> [{ index, at }]
       const map = {};
       groupsData.forEach(g => {
         g.teams.forEach(team => {
-          ;(map[team] ||= []).push(g.index);
+          (map[team] ||= []).push({
+            index: g.index,
+            at:    g.perTeamAt ? g.perTeamAt[team] : null
+          });
         });
       });
-      // Sort teams by number of unique bugs desc
-      const sorted = Object.keys(map).sort((a,b) =>
+
+      const sorted = Object.keys(map).sort((a, b) =>
         map[b].length - map[a].length || a.localeCompare(b)
       );
+
       sorted.forEach((team, rank) => {
-        const bugs = map[team];           // e.g. [1,2,5]
+        const bugs = map[team].sort((x, y) => x.index - y.index);
+        const pretty = bugs
+          .map(b => `bug ${b.index}${b.at ? ' ' + fmtTime(b.at) : ''}`)
+          .join(', ');
+
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
-          <p><strong>${rank+1}. ${team}</strong></p>
+          <p><strong>${rank + 1}. ${team}</strong></p>
           <p>
-            ${bugs.length} URL${bugs.length>1?'s':''} — 
-            ${bugs.length} bug${bugs.length>1?'s':''} 
-            (bug ${bugs.join(', bug ')})
+            ${bugs.length} URL${bugs.length > 1 ? 's' : ''} —
+            ${bugs.length} bug${bugs.length > 1 ? 's' : ''}
+            (${pretty})
           </p>
         `;
         el.appendChild(card);

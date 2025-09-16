@@ -1,32 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>All Submissions</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" />
   <style>
     /* tighten up the list a bit */
-    #submissions-list .card {
-      margin-bottom: 0.5rem;
-      padding: 0.75rem;
+    #submissions-list .card { margin-bottom: 0.5rem; padding: 0.75rem; }
+    #submissions-list p { margin: 0.25rem 0; font-size: 0.9rem; }
+    #submissions-list p strong { width: 6rem; display: inline-block; }
+
+    /* search + pager row */
+    .toolbar {
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+      margin-bottom: .75rem;
+      flex-wrap: wrap;
     }
-    #submissions-list p {
-      margin: 0.25rem 0;
-      font-size: 0.9rem;
+    .toolbar input[type="text"] {
+      flex: 1 1 220px;
+      padding: .5rem .6rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
     }
-    #submissions-list p strong {
-      width: 6rem;
-      display: inline-block;
+    .toolbar button {
+      padding: .55rem .9rem;
+      border: none; border-radius: 4px;
+      background: #00205B; color: #fff; cursor: pointer;
+    }
+
+    /* pager */
+    .pager {
+      display: flex;
+      gap: .4rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: .75rem;
+    }
+    .pager button {
+      min-width: 34px;
+      padding: .45rem .6rem;
+      border: 1px solid #ccc;
+      background: #fff; color: #222;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .pager button[disabled] { opacity: .5; cursor: default; }
+    .pager .current {
+      background: #00205B; color: #fff; border-color: #00205B;
     }
   </style>
 </head>
 <body>
-
   <div class="container">
     <!-- Hero banner -->
     <header class="hero-banner">
       <div class="logo-container">
-        <img src="rmit-logo.png" alt="School Logo" class="logo">
+        <img src="rmit-logo.png" alt="School Logo" class="logo" />
       </div>
     </header>
 
@@ -35,37 +66,78 @@
       <h1>All Bug Submissions</h1>
     </div>
 
-    <!-- Container for everything -->
+    <!-- Search + page-size toolbar -->
+    <div class="toolbar">
+      <input id="teamQuery" type="text" placeholder="Search by team…" />
+      <button id="searchBtn">Search</button>
+      <span id="resultsInfo" style="margin-left:auto; font-size:.9rem; color:#555;"></span>
+    </div>
+
+    <!-- Submissions list -->
     <div id="submissions-list">
       <p>Loading submissions…</p>
     </div>
 
-    <!-- Back link -->
-    <div class="buttons">
+    <!-- Pager -->
+    <div class="pager" id="pager"></div>
+
+    <!-- Back links -->
+    <div class="buttons" style="margin-top:1rem;">
       <a href="index.html" class="button">← Report Bugs</a>
       <a href="leaderboard.html" class="button">Leaderboard →</a>
     </div>
   </div>
 
   <script>
+    // ---- simple client-side state ----
+    const state = {
+      page: 1,
+      pageSize: 10,
+      team: '',
+      totalPages: 1,
+      total: 0
+    };
+
+    const listEl = document.getElementById('submissions-list');
+    const pagerEl = document.getElementById('pager');
+    const teamInput = document.getElementById('teamQuery');
+    const searchBtn = document.getElementById('searchBtn');
+    const resultsInfo = document.getElementById('resultsInfo');
+
+    // Load + render
     async function loadSubmissions() {
-      const res = await fetch('/api/bugs');
+      const params = new URLSearchParams({
+        page: state.page,
+        limit: state.pageSize
+      });
+      if (state.team.trim()) params.set('team', state.team.trim());
+
+      const res = await fetch('/api/bugs?' + params.toString());
       if (!res.ok) {
-        document.getElementById('submissions-list')
-          .textContent = 'Error loading submissions';
-        return;
-      }
-      const bugs = await res.json();
-
-      const list = document.getElementById('submissions-list');
-      list.innerHTML = '';  // clear “Loading…”
-
-      if (bugs.length === 0) {
-        list.textContent = 'No submissions yet.';
+        listEl.textContent = 'Error loading submissions';
+        pagerEl.innerHTML = '';
         return;
       }
 
-      bugs.forEach(bug => {
+      const { items, total, page, pageSize, totalPages } = await res.json();
+      state.total = total;
+      state.totalPages = totalPages;
+      state.page = page;
+
+      // Render summary
+      resultsInfo.textContent = total === 0
+        ? 'No results'
+        : `Showing page ${page} of ${totalPages} (${total} total)`;
+
+      // Render list
+      listEl.innerHTML = '';
+      if (items.length === 0) {
+        listEl.textContent = 'No submissions found.';
+        pagerEl.innerHTML = '';
+        return;
+      }
+
+      items.forEach(bug => {
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
@@ -80,17 +152,66 @@
             <p><strong>Screenshots:</strong></p>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
               ${bug.images.map(img =>
-                `<a href="${img.path}" target="_blank">
-                  <img src="${img.path}" alt="" style="width:120px; height:80px; object-fit:cover; border-radius:6px;">
-                </a>`
+                `<a href="${img.path}" target="_blank" rel="noopener">
+                   <img src="${img.path}" alt="" style="width:120px; height:80px; object-fit:cover; border-radius:6px;">
+                 </a>`
               ).join('')}
             </div>
           `;
         }
-        list.appendChild(card);
+        listEl.appendChild(card);
       });
+
+      renderPager();
     }
 
+    // Build pager controls: Prev, page numbers, Next
+    function renderPager() {
+      const { page, totalPages } = state;
+      pagerEl.innerHTML = '';
+
+      if (totalPages <= 1) return;
+
+      // Prev
+      const prev = document.createElement('button');
+      prev.textContent = 'Prev';
+      prev.disabled = page <= 1;
+      prev.onclick = () => { if (state.page > 1) { state.page--; loadSubmissions(); } };
+      pagerEl.appendChild(prev);
+
+      // Page numbers (simple; for many pages you could add ellipses)
+      for (let p = 1; p <= totalPages; p++) {
+        const btn = document.createElement('button');
+        btn.textContent = p;
+        if (p === page) btn.classList.add('current');
+        btn.onclick = () => { if (p !== state.page) { state.page = p; loadSubmissions(); } };
+        pagerEl.appendChild(btn);
+      }
+
+      // Next
+      const next = document.createElement('button');
+      next.textContent = 'Next';
+      next.disabled = page >= totalPages;
+      next.onclick = () => { if (state.page < totalPages) { state.page++; loadSubmissions(); } };
+      pagerEl.appendChild(next);
+    }
+
+    // Search actions
+    searchBtn.addEventListener('click', () => {
+      state.team = teamInput.value;
+      state.page = 1;
+      loadSubmissions();
+    });
+    teamInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        state.team = teamInput.value;
+        state.page = 1;
+        loadSubmissions();
+      }
+    });
+
+    // Initial load
     document.addEventListener('DOMContentLoaded', loadSubmissions);
   </script>
 </body>
